@@ -32,6 +32,16 @@ def droplet_volume(D):
     return np.pi * D ** 3 / 6
 
 
+def diam_from_vol(V):
+    """
+    V = np.pi * D ** 3 / 6
+
+    D = (V * 6 / np.pi) ** (1/3)
+    """
+
+    return (V * 6 / np.pi) ** (1/3)
+
+
 def main():
 
     nr_pseudocomponents = 2
@@ -96,7 +106,6 @@ def dissolution_rate(droplet_masses, droplet_densities):
     """
 
 
-
 def rhs(y, t, k_degr, k_diss):
     """
     y is oil droplet mass for the different droplet sizes
@@ -104,12 +113,27 @@ def rhs(y, t, k_degr, k_diss):
     The size of y is nr_bins * nr_components + nr_components_water + nr_components_water
 
     y = [bin1_comp1, bin1_comp2, ... bin1_compN, bin2_comp1, ... binM_compN, wat_comp1, ...
-         wat_compN, wat_second_metabolit1, ...,  wat_second_metabolitN]
+         wat_compN, wat_second_metabolit1, ...,  wat_second_metabolitN, bin1_diam, ..., binM_diam]
 
     k_degr are degradation rates per compoent
 
     # calculate anew dissoluation rate each timestep.
+    # dissolution rate = dissolution_propensity * droplet_bin_area (= nr_droplets * droplet_area)
+
     k_diss are dissolution rates per component per droplet size
+
+    diameters are shrunk each timestep
+
+    you lose some mass -> some volume
+
+    Problem: Sphere with (D, V) now as V2. What is D2? Just go in reverse, no? f(V) = D
+
+    for drop_bin in nr_binsizes():
+    drop_mass = y[i: i + nr_components]
+    drop_vol = drop_mass / drop_rho
+    d_new = d_old - 
+
+    Can we find a rate for the change in diameter?
     """
 
 
