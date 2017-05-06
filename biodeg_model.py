@@ -103,9 +103,12 @@ def main():
     # Need to pre-build array for mass of pseudocomponent per droplet size bin.
     # That is equal to mass per size bin * pseudocompoent fraction
     mass_per_size_class = droplet_volumes * droplet_number * oil_density
-    debug()
 
-    setup_yvector(droplet_sizes, mass_per_size_class, component_fractions)
+    # setup_yvector(droplet_sizes, mass_per_size_class, component_fractions)
+
+    rhs_code = generate_rhs(nr_sizebins, nr_pseudocomponents, 'rhs_code.py')
+
+    debug()
 
 
 def dissolution_rate(droplet_masses, droplet_densities):
@@ -138,7 +141,7 @@ def setup_yvector(bin_diameters, mass_per_size_class, component_fractions):
         y_vector.append(bin_diameter)
 
 
-def generate_rhs(nr_sizebins, nr_components):
+def generate_rhs(nr_sizebins, nr_components, filename):
     """
     Generate code for scipy.ode differential equation
 
@@ -161,31 +164,50 @@ def generate_rhs(nr_sizebins, nr_components):
 
     y_idx [3,2 ] = 3 * (2) + 2 = 7, correct.
     """
-    code = ''
+    code = 'def rhs(y, t, kbio_drop, kbio_waf, kdiss):\n'
 
     # Start
-    code += '['
+    code += '\t['
 
-    # Mass transfer from droplets to water and microorganisms
+    # Droplets: -biodegradation and -dissolution from droplets
     for bin_nr in range(nr_sizebins):
         for comp_nr in range(nr_components):
-            y_idx = nr_components * bin_nr + nr_components 
-            code += '(-kbio_drop[{0}, {1}] - kdiss[{0}, {1}) * y[{2}]'.format(bin_nr, comp_nr, y_idx)
+            y_idx = nr_components * bin_nr + comp_nr
+            code += '\t'
+            code += '(-kbio_drop[{0}, {1}] - kdiss[{0}, {1}]) * y[{2}]'.format(bin_nr, comp_nr, y_idx)
+            code += ',\n'
 
-    # Mass transfer to the water in the experiment
+    # Dissolved mass: +dissolution -biodegradation
     for comp_nr in range(nr_components):
-        ode_string = 'kdiss[{0}, {1}] * y[{0} + {1}]'
-        code += ' '.join([ode_string.format(i, comp_nr) for i in range(nr_sizebins)])
+        # Dissolution
+        growth = ''
+        for bin_nr in range(nr_sizebins):
+            y_idx_droplet = nr_components * bin_nr + comp_nr
+            growth += ' + kdiss[{0}, {1}] * y[{2}]'.format(bin_nr, comp_nr, y_idx_droplet)
 
-    # Mass transfer from water components to biotransformed
-    for comp_nr in range(nr_components):
-        y_idx = 'y[{0} + {1} + {2}]'.format(nr_components)
-        ode_string = 'kbio_waf[{0}] * y[{0}, {1}]'
-        code += ' '.join([ode_string.format(i, comp_nr) for i in range(nr_sizebins)])
+        # Biodegradation
+        y_idx_dissolved = nr_components * nr_sizebins + comp_nr
+        ode_string_biodeg = ' - kbio_waf[{0}] * y[{1}]'
+        loss = ode_string_biodeg.format(comp_nr, y_idx_dissolved)
+        code += '\t'
+        code += growth + loss
+        code += ',\n'
 
+    # Droplet diameter: change with mass
+    for bin_nr in range(nr_sizebins):
+
+        start = bin_nr * nr_components
+        end = start + nr_components
+        ode_string = '1/3 * (sum(y[{0}:{1}]) ** (-2/3)) * (rho[{2}] * 6 / np.pi) ** 1/3'
+        code += '\t'
+        code += ode_string.format(start, end, bin_nr)
+        code += ',\n'
 
     # Finish
-    code += ']'
+    code += '\t]'
+
+    with open(filename, 'wt') as f:
+        f.write(code)
 
 
 def rhs(y, t, kbio_drop, kbio_waf, kdiss):
