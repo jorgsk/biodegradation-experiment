@@ -39,10 +39,18 @@ def diam_from_vol(V):
     D = (V * 6 / np.pi) ** (1/3)
     """
 
-    return (V * 6 / np.pi) ** (1/3)
+    return (V * 6 / np.pi) ** (1 / 3)
 
 
 def main():
+    """
+    Question: do I need to use a solver? I think that the system has an analytic solution.
+
+    m_droplet(t) = np.exp((-k1 - k2) * t )
+    m_water(t) = np.exp(k2 * t)
+    m_biotransf_and_biological = np.exp(k1 * t)
+    D_droplet = ... something.
+    """
 
     nr_pseudocomponents = 2
     nr_sizebins = 3
@@ -97,6 +105,8 @@ def main():
     mass_per_size_class = droplet_volumes * droplet_number * oil_density
     debug()
 
+    setup_yvector(droplet_sizes, mass_per_size_class, component_fractions)
+
 
 def dissolution_rate(droplet_masses, droplet_densities):
     """
@@ -106,7 +116,79 @@ def dissolution_rate(droplet_masses, droplet_densities):
     """
 
 
-def rhs(y, t, k_degr, k_diss):
+def setup_yvector(bin_diameters, mass_per_size_class, component_fractions):
+    """
+    y = [bin1_comp1, bin1_comp2, ... bin1_compN, bin2_comp1, ... binM_compN, wat_comp1, ...
+         wat_compN, wat_second_metabolit1, ...,  wat_second_metabolitN, bin1_diam, ..., binM_diam]
+    """
+
+    y_vector = []
+
+    # First the mass of each component in each droplet size bin
+    for bin_mass in mass_per_size_class:
+        for comp_fraction in nr_components:
+            y_vector.append(bin_mass * comp_fraction)
+
+    # Then the mass of each component in water (initially 0)
+    for i_comp in range(len(component_fractions)):
+        y_vector.append(0)
+
+    # Then the diameter of droplets in each bin
+    for bin_diameter in bin_diameters:
+        y_vector.append(bin_diameter)
+
+
+def generate_rhs(nr_sizebins, nr_components):
+    """
+    Generate code for scipy.ode differential equation
+
+    y = [bin1_comp1, bin1_comp2, ... bin1_compN, bin2_comp1, ... binM_compN, wat_comp1, ...
+         wat_compN, wat_second_metabolit1, ...,  wat_second_metabolitN, bin1_diam, ..., binM_diam]
+
+    The rate for the components is, where di,j means size bin i, component j.
+    dmdrop_i,j/dt = (-kbio_i,j - kdiss_i,j) * y[i + j]
+
+    The rate for transfer of components from dissolution to water components is
+    dmwat_j/dt = sum(kdiss_:,j * y[: + j])
+
+    The rate for the bin diameters is
+    dD_i/dt = 1/3 * sum(y[i: i + nr_components]) ** (-2/3) * K,
+    where K = ( (rho_i) * 6 / np.pi) ** 1/3
+
+           0 ,   1 ,  2  ,  3  ,  4  ,  5  ,  6  ,  7  , 8
+    y = [m1,1, m1,2, m1,3, m2,1, m2,2, m2,3, m3,1, m3,2, ...]
+    y_idx [i, j] = nr_components * (i-1) + j
+
+    y_idx [3,2 ] = 3 * (2) + 2 = 7, correct.
+    """
+    code = ''
+
+    # Start
+    code += '['
+
+    # Mass transfer from droplets to water and microorganisms
+    for bin_nr in range(nr_sizebins):
+        for comp_nr in range(nr_components):
+            y_idx = nr_components * bin_nr + nr_components 
+            code += '(-kbio_drop[{0}, {1}] - kdiss[{0}, {1}) * y[{2}]'.format(bin_nr, comp_nr, y_idx)
+
+    # Mass transfer to the water in the experiment
+    for comp_nr in range(nr_components):
+        ode_string = 'kdiss[{0}, {1}] * y[{0} + {1}]'
+        code += ' '.join([ode_string.format(i, comp_nr) for i in range(nr_sizebins)])
+
+    # Mass transfer from water components to biotransformed
+    for comp_nr in range(nr_components):
+        y_idx = 'y[{0} + {1} + {2}]'.format(nr_components)
+        ode_string = 'kbio_waf[{0}] * y[{0}, {1}]'
+        code += ' '.join([ode_string.format(i, comp_nr) for i in range(nr_sizebins)])
+
+
+    # Finish
+    code += ']'
+
+
+def rhs(y, t, kbio_drop, kbio_waf, kdiss):
     """
     y is oil droplet mass for the different droplet sizes
 
@@ -122,18 +204,23 @@ def rhs(y, t, k_degr, k_diss):
 
     k_diss are dissolution rates per component per droplet size
 
-    diameters are shrunk each timestep
+    Can we find a rate for the change in diameter? Yes:
+    D = (m * rho * 6 / np.pi) ** (1/3)
+    D = m ** 1/3 * K -> dD/dt = d(m**1/3) / dt, here m = sum(y[i:i+nr_components])
 
-    you lose some mass -> some volume
+    dx*a/dt = a * x ** a - 1
 
-    Problem: Sphere with (D, V) now as V2. What is D2? Just go in reverse, no? f(V) = D
+    dD/dt = 1/3 * m ** (-2/3) * K
 
-    for drop_bin in nr_binsizes():
-    drop_mass = y[i: i + nr_components]
-    drop_vol = drop_mass / drop_rho
-    d_new = d_old - 
+    The rate for the components is, where di,j means size bin i, component j.
+    dmdrop_i,j/dt = -kbio_i,j - kdiss_i,j
 
-    Can we find a rate for the change in diameter?
+    The rate for the water components is
+    dmwat_j/dt = sum(kdiss_:,j)
+
+    The rate for the bin diameters is
+    dD_i/dt = 1/3 * sum(y[i: i + nr_components]) ** (-2/3) * K,
+    where K = ( (rho_i) * 6 / np.pi) ** 1/3
     """
 
 
